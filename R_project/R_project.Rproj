@@ -1,13 +1,276 @@
-Version: 1.0
 
-RestoreWorkspace: Default
-SaveWorkspace: Default
-AlwaysSaveHistory: Default
+# load datasets for analysis
 
-EnableCodeIndexing: Yes
-UseSpacesForTab: Yes
-NumSpacesForTab: 2
-Encoding: UTF-8
+daily_activity <- read.csv("E:/Google data analyst/capstone/Fitabase Data 4.12.16-5.12.16/dailyActivity_merged.csv")
 
-RnwWeave: Sweave
-LaTeX: pdfLaTeX
+hourly_steps <- read.csv("E:/Google data analyst/capstone/Fitabase Data 4.12.16-5.12.16/hourlySteps_merged.csv")
+
+daily_sleep <- read.csv("E:/Google data analyst/capstone/Fitabase Data 4.12.16-5.12.16/sleepDay_merged.csv")
+
+weight <- read.csv("E:/Google data analyst/capstone/Fitabase Data 4.12.16-5.12.16/weightLogInfo_merged.csv")
+
+#To determine the number of unique participants in each dataset, count the distinct ID values.
+
+n_distinct(daily_activity$Id)
+
+n_distinct(hourly_steps$Id)
+
+n_distinct(daily_sleep$Id)
+
+n_distinct(weight$Id)
+
+# Data Cleaning for further analysis
+
+head(daily_sleep)
+
+#The 12:00:00 AM timestamp is redundant and can be omitted for simplicity so we are left with only dates.
+
+daily_sleep$SleepDay <- (gsub('12:00:00 AM', '', daily_sleep$SleepDay))
+
+# Renaming column
+
+colnames(daily_sleep)[2] = "Date"
+
+# View updated data
+
+head(daily_sleep)
+
+
+# Similarly, we will perform data cleaning for the daily_activity data set. Begin by displaying data in daily_activity data set.
+
+head(daily_activity)
+
+# LoggedActivitiesDistance and SedentaryActiveDistance columns lack informative value.Thus, we are going to drop this columns to make our data set look simple and easily readable
+
+daily_activity <- daily_activity[c(-6, -10)]
+
+# Renaming column
+
+colnames(daily_activity)[2] = "Date"
+
+# View updated Data
+
+head(daily_activity)
+
+# subsequently, a similar cleaning activity is carried on on the hourly_steps data
+
+head(hourly_steps)
+
+# To optimize data handling, consider extracting the time portion of the timestamp into a separate column, as it contains valuable information.
+
+hourly_steps <- hourly_steps %>% separate(ActivityHour, c("Date", "Hour"), sep = "^\\S*\\K")
+
+# View the updated dataframe
+
+head(hourly_steps)
+
+## Data Exploration
+##plotting te summary generated
+
+summary(daily_activity$TotalSteps)
+
+ggplot(daily_activity, aes(x = TotalSteps)) +
+  geom_boxplot()
+
+# 1. Daily step counts typically range from 4000 to 11000, with potential outliers above this range.
+
+steps_upper <- quantile(daily_activity$TotalSteps, .9985, na.rm = TRUE)
+
+# The overwhelming majority (99.85%) of observations are clustered at or below 28,680. Data points exceeding this value are considered outliers due to their extreme deviation from the average, being more than three standard deviations away.
+
+daily_activity <- subset(daily_activity, TotalSteps <= 28680)
+# outliers are deleted
+
+ggplot(daily_activity, aes(x = TotalSteps)) +
+  geom_boxplot()
+
+# 2.performing descriptive statistics on Sleep Data set
+
+# How much sleep does each participant get on average?
+ 
+# Calculate the mean sleep for each participant and arrange the results
+mean_sleep <- daily_sleep %>% group_by(Id) %>%            # Group data by participant ID
+  summarize(mean_sleep = mean(TotalMinutesAsleep)) %>%    # Calculate mean sleep for each participant
+  arrange(mean_sleep) %>%               # Arrange the results by mean sleep
+  as.data.frame()                       # Convert the result to a data frame
+
+head(mean_sleep)
+
+
+#What percentage of time in bed was spent actually sleeping for each participant?
+
+daily_sleep %>%  # Pipe the 'daily_sleep' dataframe into the following operations
+  group_by(Id) %>%  # Group the data by 'Id' to calculate metrics for each participant
+  summarise(avg_percent_sleep = mean(TotalMinutesAsleep / TotalTimeInBed * 100)) %>%  # Calculate the average percentage of sleep for each participant
+  arrange(avg_percent_sleep) %>%  # Sort the results by 'avg_percent_sleep' in ascending order
+  mutate_if(is.numeric, round, 2)%>%  # Round all numeric columns to 2 decimal places
+  as.data.frame()  
+head(daily_sleep)
+
+
+#What is the average daily activity level for participants?
+
+library(psych)
+
+activity_level <- daily_activity[9:12]
+describe(activity_level)
+
+# Group data by participant ID
+activity_id <- daily_activity %>%
+  group_by(Id) %>%
+  
+  # Calculate total minutes for each activity level
+  summarize(
+    sum_very = sum(VeryActiveMinutes),  # Sum of Very Active Minutes
+    sum_fairly = sum(FairlyActiveMinutes),  # Sum of Fairly Active Minutes
+    sum_lightly = sum(LightlyActiveMinutes),  # Sum of Lightly Active Minutes
+    sum_sed = sum(SedentaryMinutes)  # Sum of Sedentary Minutes
+  ) %>%
+  
+  # Select relevant columns
+  select(Id, sum_very, sum_fairly, sum_lightly, sum_sed) %>%
+  
+  # Convert to data frame
+  as.data.frame()
+
+# Display the first few rows
+head(activity_id)
+
+#During which hour of the day do participants typically take the most steps?
+
+# This code finds the hour of the day with the most average steps.
+
+# Group the data by "Hour" to calculate average steps for each hour.
+# Assuming hourly_steps is a data frame with columns 'Hour' and 'StepTotal'
+
+hourly_steps %>%
+  group_by(ActivityHour) %>%  # Group data by hour
+  summarize(mean_steps = mean(StepTotal)) %>%  # Calculate average steps per hour
+  arrange(desc(mean_steps)) %>%  # Arrange by descending mean steps
+  head(1)  # Get the first row (hour with highest mean steps)
+
+# Answer: 6:00PM with an average of about 1153 steps
+# Creating a dataframe with average hourly steps for later visualization
+# This code creates a data frame named "mean_steps" containing average steps for each hour.
+
+# Group the data by "ActivityHour" (assuming this is the correct column for hourly data).
+mean_steps <- hourly_steps %>%
+  group_by(ActivityHour) %>%
+  
+  # Calculate the mean steps (average) for each hour group.
+  # Store the result in a new column named "mean_steps".
+  summarize(mean_steps = mean(StepTotal)) %>%
+  
+  # Select only the "Hour" and "mean_steps" columns for further analysis.
+  # If "Hour" is the desired column name, update the selection here.
+  select(ActivityHour, mean_steps) %>%  # Update "Hour" if necessary
+  
+  # Sort the data by "ActivityHour" in descending order 
+  # (assuming higher values represent later hours).
+  arrange(desc(ActivityHour)) %>%
+  
+  # Convert the result into a regular data frame for easier manipulation.
+  as.data.frame()
+
+
+###Determine the central tendency and dispersion of total steps taken by each participant.
+
+# Group data by participant ID
+steps_byId <- hourly_steps %>%
+  group_by(Id) %>%
+  
+  # Calculate mean and standard deviation of step totals
+  summarize(
+    mean_steps_id = mean(StepTotal),  # Average steps per participant
+    sd_steps_id = sd(StepTotal)       # Standard deviation of steps per participant
+  ) %>%
+  
+  # Round numeric columns to 2 decimal places for better readability
+  mutate_if(is.numeric, round, 2) %>%
+  
+  # Convert the result to a data frame for easier manipulation
+  as.data.frame()
+
+# Display the first few rows (showing some participants' statistics)
+head(steps_byId)
+
+## Data visualizations
+
+
+#To what extent do daily step counts correlate with sedentary minutes?
+
+ggplot(data=daily_activity, aes(x=TotalSteps, y=SedentaryMinutes)) + 
+  geom_point() + 
+  geom_smooth() + 
+  labs(title="Total Steps vs. Sedentary Minutes",
+       x = "Steps", y = "Minutes")
+
+#Preliminary investigation suggests no relationship between the number of steps taken and time spent sedentary. A simple linear regression model will be employed to assess this further.
+
+sed_steps_lr <-lm(SedentaryMinutes ~ TotalSteps, daily_activity)
+summary(sed_steps_lr)
+
+#The r-squared value of 0.1125 indicates a weak correlation between steps and sedentary time.
+
+#What is the average nightly sleep duration for participants throughout the study?
+
+options(scipen = 999)
+ggplot(mean_sleep, aes(x = Id, y = mean_sleep)) +
+  geom_col(aes(reorder(Id, +mean_sleep), y = mean_sleep)) +
+  labs(title = "Average Minutes of Sleep", x = "Participant Id", y = "Minutes") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  geom_hline(yintercept = mean(mean_sleep$mean_sleep), color = "red")
+#This graph illustrates individual and group sleep patterns.
+
+##How many steps do participants take on average per hour?
+
+ggplot(mean_steps, aes(x = ActivityHour, y = mean_steps)) +
+  geom_col(aes(reorder(ActivityHour, +mean_steps), mean_steps)) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title = "Average Steps Taken per Hour of Day",
+       x = "ActivityHour", y = "Average Steps")
+
+#Peak step activity occurs between 5 and 7 PM, while the lowest activity levels are observed from midnight to 4 AM.
+
+
+##To identify potential new correlations, I will merge the 'activity_id' and 'steps_Id' datasets.
+
+combined_data <- merge(activity_id, steps_byId, by = "Id")
+
+#To conduct a correlation analysis, I will extract the numeric columns into a dedicated dataset.
+num_data <- combined_data[-1]
+cor(num_data)
+
+#The correlation matrix reveals minimal relationships between different activity levels. However, a moderate positive correlation of .7 exists between mean steps and very active minutes.
+
+ggplot(combined_data, aes(x = mean_steps_id, y = sum_very)) + 
+  geom_point() +
+  labs(title = "Average Steps Taken in a Day Compared to Very Active Minutes",
+       x = "Average Steps", y = "Very Active Minutes")
+### We observe a moderate upward trend in "very active minutes" as the average daily steps increase.
+#Additional Visualizations:
+ # I have created more visualizations in Tableau, which can be accessed here: Bellabeat Dashboard - Tableau.
+#Descriptive Statistical Analyses and Visualizations:
+#   The descriptive statistical analyses and visualizations reveal the following trends in smart device usage:
+#   Sedentary minutes dominated participants' days and remained fairly consistent throughout the week.
+# Average "very active minutes" stayed steady at around 20 minutes each day.
+# On average, participants slept the most on Sundays, which was also the day they took the fewest steps.
+# Participants took the most steps on Tuesdays and Saturdays.
+# The fewest steps were taken at 3:00 PM, while the most steps were taken at 6:00 PM.
+# On average, participants slept about 390 minutes, or 6.5 hours per night.
+# Users who took more steps per day were more likely to engage in "very active minutes."
+# Recommendations
+# How can these trends influence Bellabeat's marketing strategy?
+#   Based on the insights into how customers currently use smart fitness devices, we can make the following marketing recommendations:
+#   Weight Log Feature:
+#   Since very few customers used the weight log feature, it does not seem to be a strong selling point. Focus marketing efforts on other features like activity, sleep, and step tracking. Additionally, consider researching ways to make the weight log feature more appealing.
+# Activity Engagement:
+#   Data shows participants mainly engaged in "light" activity with few "very active" minutes each day. Introducing a "level up" feature where participants earn points based on their activity levels, with higher points for more intense activity, could motivate users to increase their active minutes.
+# Sunday Step Decrease:
+#   There is about a 1,000-step decrease on Sundays compared to other days. Sending a notification on Sunday mornings with a step goal and a reward for hitting a 7-day streak could help close this gap and encourage consistent device use throughout the week.
+# Targeting Working Adults:
+#   Data indicates that most users are active around 6:00 PM, suggesting they have typical work hours and get most of their steps after work. An ad campaign targeting working adults, focusing on tracking steps during busy days, could be effective. Additionally, reminder notifications around 12:00 PM and 8:00 PM could encourage increased activity during lunch breaks and after dinner.
+# Sleep Tracking:
+#   On average, participants got less than the CDC-recommended 7 hours of sleep per night. Continue marketing the device's sleep tracking feature, as those not getting enough sleep may want to monitor their sleep patterns. Consider partnering with a meditation app or habit tracker to enhance the appeal.
+
+
